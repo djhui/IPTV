@@ -1,0 +1,70 @@
+name: Update Chinese EPG File
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 * * * *'
+  push:
+    branches:
+      - master
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: set variables
+        run: |
+          echo "UPDATE_TIME=$(TZ='Asia/Shanghai' date +%Y-%m-%d\ %H:%M\ %Z)" >> $GITHUB_ENV
+
+      - name: set up python 3
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: prepare release
+        uses: actions/checkout@v4
+        with: 
+          path: release
+          ref: master
+
+      - name: prepare generater
+        uses: actions/checkout@v4
+        with: 
+          repository: BurningC4/Chinese-IPTV
+          ssh-key: ${{ secrets.GETEPG }}
+          path: getepg
+          ref: main
+
+      - name: get new epg file
+        run: |
+          sudo pip3 install -r getepg/requirements.txt
+          sudo python3 getepg/getepg.py --file release/guide.xml
+
+      - name: Upload epgfile to R2
+        uses: magicwallet/r2-upload@main
+        with:
+          endpoint: ${{ secrets.R2_ENDPOINT }}
+          access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret_access_key: ${{ secrets.R2_ACCESS_SECRET_KEY }}
+          bucket: ${{ secrets.R2_BUCKET }}
+          file: release/guide.xml
+          destination: 'guide.xml'
+
+      - name: Upload playlist to R2
+        uses: magicwallet/r2-upload@main
+        with:
+          endpoint: ${{ secrets.R2_ENDPOINT }}
+          access_key_id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          secret_access_key: ${{ secrets.R2_ACCESS_SECRET_KEY }}
+          bucket: ${{ secrets.R2_BUCKET }}
+          file: release/TV-IPV4.m3u
+          destination: 'TV-IPV4.m3u'
+        
+      - name: push release
+        run: |
+          git -C release config --local user.name github-actions[bot]
+          git -C release config --local user.email github-actions[bot]@users.noreply.github.com
+          git -C release add guide.xml
+          git -C release commit -m "auto update at ${{ env.UPDATE_TIME }}" --allow-empty
+          git -C release push
